@@ -2,10 +2,6 @@
 
 import json
 import logging
-import pandas as pd
-import yaml
-import pyarrow as pa
-import pyarrow.parquet as pq
 from pathlib import Path
 from typing import Dict, List, Set, Optional, Union
 from datetime import datetime
@@ -25,9 +21,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class DatasetAssembler:
-    def __init__(self, input_dirs: List[str], output_dir: str = "final_dataset"):
+    def __init__(self, input_dir: str = "security_aligned", output_dir: str = "final_dataset"):
         """Initialize the dataset assembler with directory configurations."""
-        self.input_dirs = [Path(d) for d in input_dirs]
+        self.input_dir = Path(input_dir)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
@@ -83,22 +79,14 @@ class DatasetAssembler:
         }
 
     def load_data(self, file_path: Path) -> Union[Dict, List, None]:
-        """Load data from various file formats."""
+        """Load data from JSON files."""
         try:
-            suffix = file_path.suffix.lower()
-            if suffix == '.json':
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            elif suffix in {'.yaml', '.yml'}:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    return yaml.safe_load(f)
-            elif suffix == '.csv':
-                return pd.read_csv(file_path).to_dict('records')
-            elif suffix == '.parquet':
-                return pd.read_parquet(file_path).to_dict('records')
-            else:
-                logger.warning(f"Unsupported file format: {suffix}")
-                return None
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                # Handle both direct lists and data field
+                if isinstance(data, dict) and 'data' in data:
+                    return data['data']
+                return data
         except Exception as e:
             logger.error(f"Error loading file {file_path}: {str(e)}")
             return None
@@ -106,9 +94,31 @@ class DatasetAssembler:
     def validate_entry(self, entry: Dict) -> bool:
         """Validate a single entry against the schema."""
         try:
-            jsonschema.validate(instance=entry, schema=self.dataset_schema)
+            # Handle entries that are nested in a 'data' field
+            if isinstance(entry, dict) and 'data' in entry and isinstance(entry['data'], list):
+                return True
+                
+            # Handle entries that are nested in a 'data' field as a single item
+            if isinstance(entry, dict) and 'data' in entry and isinstance(entry['data'], dict):
+                return True
+                
+            # Basic validation for direct entries
+            if not isinstance(entry, dict):
+                return False
+                
+            # Check for required fields
+            if 'instruction' not in entry or 'response' not in entry:
+                return False
+                
+            # Validate instruction and response are non-empty strings
+            if not isinstance(entry['instruction'], str) or not entry['instruction'].strip():
+                return False
+            if not isinstance(entry['response'], str) or not entry['response'].strip():
+                return False
+                
             return True
-        except jsonschema.exceptions.ValidationError:
+        except Exception as e:
+            logger.error(f"Error validating entry: {str(e)}")
             return False
 
     def generate_entry_hash(self, entry: Dict) -> str:
@@ -130,35 +140,80 @@ class DatasetAssembler:
         text = ' '.join(text.split())  # Normalize whitespace
         return text
 
-    def process_entry(self, entry: Dict, source_file: Path) -> Optional[Dict]:
+    def process_entry(self, entry: Dict, source_file: Path) -> List[Dict]:
         """Process and validate a single entry."""
         try:
-            # Clean text fields
-            entry['instruction'] = self.clean_text(entry.get('instruction', ''))
-            entry['response'] = self.clean_text(entry.get('response', ''))
+            processed_entries = []
             
-            # Validate entry
-            if not self.validate_entry(entry):
+            # Handle entries that are nested in a 'data' field
+            if isinstance(entry, dict) and 'data' in entry:
+                if isinstance(entry['data'], list):
+                    # Process each item in the data list
+                    for item in entry['data']:
+                        processed = self.process_single_entry(item, source_file)
+                        if processed:
+                            processed_entries.extend(processed if isinstance(processed, list) else [processed])
+                elif isinstance(entry['data'], dict):
+                    # Process the single data item
+                    processed = self.process_single_entry(entry['data'], source_file)
+                    if processed:
+                        processed_entries.extend(processed if isinstance(processed, list) else [processed])
+            else:
+                # Process direct entry
+                processed = self.process_single_entry(entry, source_file)
+                if processed:
+                    processed_entries.extend(processed if isinstance(processed, list) else [processed])
+            
+            return processed_entries
+            
+        except Exception as e:
+            logger.error(f"Error processing entry: {str(e)}")
+            self.stats['invalid_entries'] += 1
+            return []
+
+    def process_single_entry(self, entry: Dict, source_file: Path) -> Optional[Dict]:
+        """Process a single entry and normalize it to instruction-response format."""
+        try:
+            # Skip entries without instruction or response
+            if not isinstance(entry, dict):
+                return None
+                
+            instruction = entry.get('instruction', '')
+            response = entry.get('response', '')
+            
+            # Handle complex response structures
+            if isinstance(response, dict):
+                # Convert dictionary response to formatted string
+                formatted_response = []
+                for key, value in response.items():
+                    if isinstance(value, (list, dict)):
+                        formatted_response.append(f"**{key}:**\n{json.dumps(value, indent=2)}")
+                    else:
+                        formatted_response.append(f"**{key}:** {value}")
+                response = "\n\n".join(formatted_response)
+            
+            # Clean and validate text
+            instruction = self.clean_text(instruction)
+            response = self.clean_text(response)
+            
+            if not instruction or not response:
                 self.stats['invalid_entries'] += 1
                 return None
-            
-            # Add source information if not present
-            if 'metadata' not in entry:
-                entry['metadata'] = {}
-            entry['metadata']['source_file'] = str(source_file)
-            entry['metadata']['processing_timestamp'] = datetime.now().isoformat()
             
             # Update statistics
             if 'category' in entry.get('metadata', {}):
                 self.stats['categories'].add(entry['metadata']['category'])
             
-            self.stats['entry_lengths']['instruction'].append(len(entry['instruction']))
-            self.stats['entry_lengths']['response'].append(len(entry['response']))
+            self.stats['entry_lengths']['instruction'].append(len(instruction))
+            self.stats['entry_lengths']['response'].append(len(response))
             
-            return entry
+            return {
+                'instruction': instruction,
+                'response': response
+            }
             
         except Exception as e:
-            logger.error(f"Error processing entry: {str(e)}")
+            logger.error(f"Error processing single entry: {str(e)}")
             self.stats['invalid_entries'] += 1
             return None
 
@@ -167,7 +222,18 @@ class DatasetAssembler:
         unique_entries = {}
         duplicates = 0
         
+        # Flatten the list of entries if needed
+        flattened_entries = []
         for entry in entries:
+            if isinstance(entry, list):
+                flattened_entries.extend(entry)
+            else:
+                flattened_entries.append(entry)
+        
+        for entry in flattened_entries:
+            if not isinstance(entry, dict):
+                continue
+                
             entry_hash = self.generate_entry_hash(entry)
             if entry_hash not in unique_entries:
                 unique_entries[entry_hash] = entry
@@ -177,56 +243,23 @@ class DatasetAssembler:
         self.stats['duplicate_entries'] = duplicates
         return list(unique_entries.values())
 
-    def save_dataset(self, data: List[Dict], format: str):
-        """Save dataset in specified format."""
+    def save_dataset(self, data: List[Dict]):
+        """Save dataset as JSON with only instruction-response pairs."""
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        base_name = f"cybersecurity_dataset_{timestamp}"
+        json_path = self.output_dir / f"final_cybersecurity_dataset_{timestamp}.json"
         
-        if format == 'json':
-            json_path = self.output_dir / f"{base_name}.json"
-            with open(json_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2)
-            logger.info(f"Saved JSON dataset to {json_path}")
-            
-        elif format == 'csv':
-            csv_path = self.output_dir / f"{base_name}.csv"
-            df = pd.DataFrame(data)
-            df.to_csv(csv_path, index=False)
-            logger.info(f"Saved CSV dataset to {csv_path}")
-            
-        elif format == 'parquet':
-            parquet_path = self.output_dir / f"{base_name}.parquet"
-            table = pa.Table.from_pandas(pd.DataFrame(data))
-            pq.write_table(table, parquet_path)
-            logger.info(f"Saved Parquet dataset to {parquet_path}")
-
-    def generate_dataset_report(self):
-        """Generate a detailed report about the assembled dataset."""
-        report = Table(title="Dataset Assembly Report", show_header=True)
-        report.add_column("Metric", style="cyan")
-        report.add_column("Value", style="green")
+        # Flatten the list of entries if needed
+        flattened_data = []
+        for entry in data:
+            if isinstance(entry, list):
+                flattened_data.extend(entry)
+            else:
+                flattened_data.append(entry)
         
-        # Add statistics
-        report.add_row("Total Entries Processed", str(self.stats['total_entries']))
-        report.add_row("Valid Entries", str(self.stats['valid_entries']))
-        report.add_row("Duplicate Entries", str(self.stats['duplicate_entries']))
-        report.add_row("Invalid Entries", str(self.stats['invalid_entries']))
-        report.add_row("Number of Sources", str(len(self.stats['sources'])))
-        report.add_row("Number of Categories", str(len(self.stats['categories'])))
-        
-        # Calculate averages
-        avg_instruction_len = sum(self.stats['entry_lengths']['instruction']) / len(self.stats['entry_lengths']['instruction'])
-        avg_response_len = sum(self.stats['entry_lengths']['response']) / len(self.stats['entry_lengths']['response'])
-        
-        report.add_row("Average Instruction Length", f"{avg_instruction_len:.1f} characters")
-        report.add_row("Average Response Length", f"{avg_response_len:.1f} characters")
-        
-        self.console.print(report)
-        
-        # Save report
-        report_path = self.output_dir / f"dataset_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-        with open(report_path, 'w', encoding='utf-8') as f:
-            f.write(str(report))
+        # Save the clean dataset
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(flattened_data, f, indent=2)
+        logger.info(f"Saved final dataset to {json_path}")
 
     def process_file(self, file_path: Path) -> List[Dict]:
         """Process a single file."""
@@ -246,13 +279,13 @@ class DatasetAssembler:
         for entry in data:
             processed_entry = self.process_entry(entry, file_path)
             if processed_entry:
-                processed_entries.append(processed_entry)
+                processed_entries.extend(processed_entry)
                 self.stats['valid_entries'] += 1
         
         return processed_entries
 
     def assemble_dataset(self):
-        """Assemble the final dataset from all sources."""
+        """Assemble the final dataset from all JSON files in security_aligned."""
         all_entries = []
         
         with Progress(
@@ -260,27 +293,33 @@ class DatasetAssembler:
             TextColumn("[progress.description]{task.description}"),
             transient=True
         ) as progress:
-            # Process all files in parallel
+            # Get all JSON files
+            file_paths = list(self.input_dir.glob('*.json'))
+            
+            task = progress.add_task("Processing files...", total=len(file_paths))
+            
+            # Process files in parallel
             with ThreadPoolExecutor() as executor:
-                file_paths = list(itertools.chain.from_iterable(
-                    d.glob('*.*') for d in self.input_dirs
-                ))
-                
-                task = progress.add_task("Processing files...", total=len(file_paths))
-                
                 for entries in executor.map(self.process_file, file_paths):
-                    all_entries.extend(entries)
+                    if isinstance(entries, list):
+                        all_entries.extend(entries)
+                    elif entries is not None:
+                        all_entries.append(entries)
                     progress.update(task, advance=1)
         
         # Remove duplicates
         unique_entries = self.remove_duplicates(all_entries)
         
-        # Save in multiple formats
-        for format in ['json', 'csv', 'parquet']:
-            self.save_dataset(unique_entries, format)
+        # Save final dataset
+        self.save_dataset(unique_entries)
         
-        # Generate report
-        self.generate_dataset_report()
+        # Print summary
+        self.console.print(f"\n[green]Dataset Assembly Complete![/green]")
+        self.console.print(f"Total entries processed: {self.stats['total_entries']}")
+        self.console.print(f"Valid entries: {len(unique_entries)}")
+        self.console.print(f"Duplicate entries removed: {self.stats['duplicate_entries']}")
+        self.console.print(f"Invalid entries: {self.stats['invalid_entries']}")
+        self.console.print(f"Number of categories: {len(self.stats['categories'])}")
         
         return unique_entries
 
@@ -288,13 +327,13 @@ def main():
     """Main function to demonstrate usage."""
     import argparse
     parser = argparse.ArgumentParser(description='Assemble final cybersecurity dataset')
-    parser.add_argument('--input-dirs', nargs='+', required=True,
-                       help='Input directories containing processed data')
+    parser.add_argument('--input-dir', default='security_aligned',
+                       help='Input directory containing processed data')
     parser.add_argument('--output-dir', default='final_dataset',
                        help='Output directory for final dataset')
     args = parser.parse_args()
     
-    assembler = DatasetAssembler(args.input_dirs, args.output_dir)
+    assembler = DatasetAssembler(args.input_dir, args.output_dir)
     assembler.assemble_dataset()
 
 if __name__ == "__main__":
