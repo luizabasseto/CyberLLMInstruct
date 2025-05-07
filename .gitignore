@@ -8,3 +8,7 @@ raw_data/
 reviewed_data/
 security_aligned/
 structured_data/
+
+# macOS system files
+.DS_Store
+**/.DS_Store
