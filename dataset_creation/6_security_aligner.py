@@ -11,6 +11,9 @@ import random
 import re
 import hashlib
 from jinja2 import Template
+import aiohttp
+import asyncio
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeRemainingColumn
 
 # Configure logging
 logging.basicConfig(
@@ -20,11 +23,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class SecurityAligner:
-    def __init__(self, input_dir: str = "reviewed_data", output_dir: str = "security_aligned"):
+    def __init__(self, input_dir: str = "reviewed_data", output_dir: str = "security_aligned",
+                 ollama_model: str = 'gemma3', ollama_url: str = "http://localhost:11434"):
         """Initialize the security aligner with directory configurations."""
         self.input_dir = Path(input_dir)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Ollama configuration
+        self.ollama_model = ollama_model
+        self.ollama_url = ollama_url
         
         # Template categories
         self.template_categories = {
@@ -322,10 +330,8 @@ Response: I cannot assist with potentially harmful activities. This request appe
             elif suffix in {'.yaml', '.yml'}:
                 with open(file_path, 'r', encoding='utf-8') as f:
                     return yaml.safe_load(f)
-            elif suffix == '.csv':
-                return pd.read_csv(file_path).to_dict('records')
             else:
-                logger.warning(f"Unsupported file format: {suffix}")
+                logger.warning(f"Skipping unsupported file format: {suffix}")
                 return None
         except Exception as e:
             logger.error(f"Error loading file {file_path}: {str(e)}")
@@ -347,10 +353,147 @@ Response: I cannot assist with potentially harmful activities. This request appe
         
         logger.info(f"Saved security-aligned data to {self.output_dir}")
 
-    def process_directory(self, security_example_ratio: float = 0.2):
+    def enhance_instruction_response(self, entry: Dict) -> Dict:
+        """Enhance instruction and response with more context and detail."""
+        # Handle string entries
+        if isinstance(entry, str):
+            return {
+                'instruction': entry,
+                'response': '',
+                'metadata': {'category': ''}
+            }
+            
+        instruction = entry.get('instruction', '')
+        response = entry.get('response', '')
+        
+        # Add context to instruction if it's too short
+        if len(instruction.split()) < 10:
+            instruction = f"Given the following cybersecurity scenario, {instruction}"
+        
+        # Add context to response if it's too short
+        if len(response.split()) < 15:
+            response = f"Based on cybersecurity best practices and industry standards, {response}"
+        
+        # Add specific details based on category
+        category = entry.get('metadata', {}).get('category', '')
+        if category == 'phishing':
+            instruction = f"{instruction}\n\nConsider the following aspects:\n- Email authenticity verification\n- Link safety assessment\n- Social engineering indicators\n- Recommended actions"
+            response = f"{response}\n\nKey security considerations:\n- Verify sender's email address\n- Check for suspicious links\n- Look for urgency tactics\n- Report to security team"
+        elif category == 'malware':
+            instruction = f"{instruction}\n\nAnalyze for:\n- Code behavior patterns\n- System impact\n- Data access attempts\n- Persistence mechanisms"
+            response = f"{response}\n\nSecurity recommendations:\n- Isolate affected systems\n- Document behavior patterns\n- Update security controls\n- Implement monitoring"
+        elif category == 'social_engineering':
+            instruction = f"{instruction}\n\nEvaluate:\n- Request legitimacy\n- Authority verification\n- Information sensitivity\n- Policy compliance"
+            response = f"{response}\n\nBest practices:\n- Verify requester identity\n- Check authorization level\n- Follow data handling procedures\n- Document the interaction"
+        
+        return {
+            **entry,
+            'instruction': instruction,
+            'response': response
+        }
+
+    async def call_ollama(self, prompt: str) -> Optional[str]:
+        """Call Ollama API with retry logic."""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.ollama_url}/api/generate",
+                    json={
+                        "model": self.ollama_model,
+                        "prompt": prompt,
+                        "stream": False,
+                        "options": {
+                            "temperature": 0.7,
+                            "num_predict": 2000
+                        }
+                    },
+                    timeout=60
+                ) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        return result.get('response', '')
+                    else:
+                        logger.error(f"Ollama API error: {response.status}")
+                        return None
+        except Exception as e:
+            logger.error(f"Error calling Ollama: {str(e)}")
+            return None
+
+    def clean_json_response(self, response: str) -> Optional[Dict]:
+        """Clean and parse JSON from Ollama response."""
+        try:
+            # Remove any text before the first {
+            start_idx = response.find('{')
+            if start_idx == -1:
+                return None
+            json_str = response[start_idx:]
+            
+            # Remove any text after the last }
+            end_idx = json_str.rfind('}')
+            if end_idx == -1:
+                return None
+            json_str = json_str[:end_idx+1]
+            
+            # Parse JSON
+            return json.loads(json_str)
+        except Exception as e:
+            logger.error(f"Error cleaning JSON response: {str(e)}")
+            return None
+
+    async def enhance_with_ollama(self, entry: Dict) -> Dict:
+        """Enhance instruction and response using Ollama."""
+        if not isinstance(entry, dict):
+            return entry
+
+        instruction = entry.get('instruction', '')
+        response = entry.get('response', '')
+        category = entry.get('metadata', {}).get('category', '')
+
+        # Prepare the enhancement prompt
+        prompt = f"""Enhance this cybersecurity instruction-response pair to be more detailed and educational.
+If it's a {category} scenario, add relevant technical details and best practices.
+
+Original Instruction: {instruction}
+Original Response: {response}
+
+Return a JSON object with enhanced versions (no other text):
+{{
+    "enhanced_instruction": "improved version with more context and detail",
+    "enhanced_response": "improved version with technical details and best practices",
+    "enhancement_notes": "brief explanation of improvements made"
+}}"""
+
+        # Get enhancement from Ollama
+        ollama_response = await self.call_ollama(prompt)
+        if not ollama_response:
+            return entry
+
+        # Parse the enhanced content
+        enhanced_data = self.clean_json_response(ollama_response)
+        if not enhanced_data:
+            return entry
+
+        # Update the entry with enhanced content
+        enhanced_entry = {
+            **entry,
+            'instruction': enhanced_data.get('enhanced_instruction', instruction),
+            'response': enhanced_data.get('enhanced_response', response),
+            'metadata': {
+                **(entry.get('metadata', {})),
+                'enhancement_notes': enhanced_data.get('enhancement_notes', ''),
+                'enhancement_timestamp': datetime.now().isoformat()
+            }
+        }
+
+        return enhanced_entry
+
+    async def process_directory(self, security_example_ratio: float = 0.2):
         """Process all files in the input directory."""
         for file_path in self.input_dir.glob('*.*'):
-            if file_path.suffix.lower() not in {'.json', '.yaml', '.yml', '.csv'}:
+            # Skip review stats files and unsupported formats
+            if (file_path.name.startswith('review_stats') or 
+                file_path.suffix.lower() not in {'.json', '.yaml', '.yml'}):
+                logger.info(f"Skipping file: {file_path}")
                 continue
             
             logger.info(f"Processing {file_path}")
@@ -361,7 +504,10 @@ Response: I cannot assist with potentially harmful activities. This request appe
             
             # Ensure data is a list
             if isinstance(data, dict):
-                data = [data]
+                if 'data' in data:
+                    data = data['data']
+                else:
+                    data = [data]
             
             # Calculate number of security examples to add
             num_security_examples = int(len(data) * security_example_ratio)
@@ -377,23 +523,56 @@ Response: I cannot assist with potentially harmful activities. This request appe
             
             # Combine original data with security examples
             aligned_data = data + security_examples
-            random.shuffle(aligned_data)  # Randomize order
+            enhanced_data = []
+            
+            # Process entries one by one with progress bar
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TimeRemainingColumn(),
+            ) as progress:
+                enhance_task = progress.add_task(
+                    f"[cyan]Enhancing entries for {file_path.name}...",
+                    total=len(aligned_data)
+                )
+                
+                for entry in aligned_data:
+                    try:
+                        # Enhance entry using Ollama
+                        enhanced_entry = await self.enhance_with_ollama(entry)
+                        enhanced_data.append(enhanced_entry)
+                    except Exception as e:
+                        logger.error(f"Error enhancing entry: {str(e)}")
+                        # Keep original entry if enhancement fails
+                        enhanced_data.append(entry)
+                    
+                    # Update progress
+                    progress.update(enhance_task, advance=1)
+                    
+                    # Add a small delay to avoid overwhelming Ollama
+                    await asyncio.sleep(0.1)
+            
+            # Randomize order
+            random.shuffle(enhanced_data)
             
             # Save aligned data
-            self.save_data(aligned_data, file_path)
+            self.save_data(enhanced_data, file_path)
 
 def main():
     """Main function to demonstrate usage."""
-    aligner = SecurityAligner()
-    
     # Add command line arguments
     import argparse
     parser = argparse.ArgumentParser(description='Add security-focused examples to dataset')
     parser.add_argument('--ratio', type=float, default=0.2,
                        help='Ratio of security examples to add (default: 0.2)')
+    parser.add_argument('--model', type=str, default='gemma3',
+                       help='Ollama model to use (default: gemma3)')
     args = parser.parse_args()
     
-    aligner.process_directory(security_example_ratio=args.ratio)
+    aligner = SecurityAligner(ollama_model=args.model)
+    asyncio.run(aligner.process_directory(security_example_ratio=args.ratio))
 
 if __name__ == "__main__":
     main() 
