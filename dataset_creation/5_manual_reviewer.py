@@ -73,7 +73,11 @@ class CyberDataReviewer:
             suffix = file_path.suffix.lower()
             if suffix == '.json':
                 with open(file_path, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+                    data = json.load(f)
+                    # Extract the 'data' field if it exists
+                    if isinstance(data, dict) and 'data' in data:
+                        return data['data']
+                    return data
             elif suffix in {'.yaml', '.yml'}:
                 with open(file_path, 'r', encoding='utf-8') as f:
                     return yaml.safe_load(f)
@@ -110,13 +114,22 @@ class CyberDataReviewer:
         table.add_row("Instruction", entry.get('instruction', 'N/A'))
         table.add_row("Response", entry.get('response', 'N/A'))
         
-        # Add domain information if available
+        # Add type information
+        table.add_row("Type", entry.get('type', 'N/A'))
+        
+        # Add source data
+        if 'source_data' in entry:
+            source_str = json.dumps(entry['source_data'], indent=2)
+            table.add_row("Source Data", source_str)
+        
+        # Add domain information
         if 'domains' in entry:
             domains_str = '\n'.join([
-                f"{d['name']} (confidence: {d['confidence']:.2f})"
+                f"{d['domain']} (confidence: {d['confidence']:.2f})"
                 for d in entry['domains']
             ])
             table.add_row("Domains", domains_str)
+            table.add_row("Primary Domain", entry.get('primary_domain', 'N/A'))
         
         self.console.print(Panel(table, title="Entry Review", border_style="green"))
 
@@ -368,7 +381,8 @@ class CyberDataReviewer:
 
 def main():
     """Main function to demonstrate usage."""
-    reviewer = CyberDataReviewer()
+    # Update the input directory to point to the correct location
+    reviewer = CyberDataReviewer(input_dir="domain_classified")
     
     # Handle graceful exit
     def signal_handler(sig, frame):
