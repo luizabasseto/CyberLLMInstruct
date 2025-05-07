@@ -10,7 +10,7 @@ This repository contains all code and materials to reproduce the dataset used in
 ## Repository Structure
 
 * `dataset_creation/`: Dataset creation pipeline
-  - Eight sequential scripts (`1_data_collector.py` through `8_final_assembler.py`) for collecting, processing, and validating cyber security data
+  - Seven sequential scripts (`1_data_collector.py` through `6_security_aligner.py`, and `8_final_assembler.py`) for collecting, processing, and validating cyber security data
   - See [`dataset_creation/README.md`](dataset_creation/README.md) for detailed pipeline documentation
   - Use these scripts to reproduce the dataset following our methodology
 
@@ -70,13 +70,37 @@ cd CyberLLMInstruct
 pip install -r requirements.txt
 ```
 
-3. Dataset Creation:
+3. Install and configure Ollama:
+```bash
+# Install Ollama (macOS/Linux)
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Pull required models
+ollama pull gemma:2b
+ollama pull mistral:7b
+```
+
+4. Dataset Creation:
    To create the dataset, follow the pipeline in the `dataset_creation/` directory:
-   - Each script (1-8) should be run sequentially
+   - Each script (1-6, 8) should be run sequentially
    - Detailed instructions are provided in `dataset_creation/README.md`
    - This process ensures compliance with data usage rights and allows you to reproduce the dataset
+   - The pipeline will create several output directories (raw_data, filtered_data, etc.) as it processes the data
 
-4. Follow the specific documentation in each directory for:
+5. Follow the specific documentation in each directory for:
    - Fine-tuning models: See `finetune/README.md`
    - Model evaluation: See `evaluation/README.md`
    - Utility scripts: See `scripts/README.md`
+
+## Generated Directories
+
+The pipeline will create the following directories as it runs:
+- `raw_data/`: Initial collected data
+- `filtered_data/`: Data after filtering
+- `structured_data/`: Structured and cleaned data
+- `domain_classified/`: Data after domain classification
+- `reviewed_data/`: Data after manual review
+- `security_aligned/`: Security-aligned instruction pairs
+- `final_dataset/`: Final processed dataset
+
+These directories are not included in the repository and will be generated when you run the pipeline.
