@@ -1,10 +1,5 @@
 # CyberLLMInstruct
 
-Code and dataset repository for the paper:
-> CyberLLMInstruct: A new dataset for analysing safety of fine-tuned LLMs using cyber security data
-
-Published at: [arXiv:2503.09334](https://arxiv.org/abs/2503.09334)
-
 This repository contains all code and materials to reproduce the dataset used in the paper. Due to copyright considerations, we provide scripts to regenerate the dataset rather than distributing it directly.
 
 ## Repository Structure
@@ -41,27 +36,12 @@ The following large language models have been fine-tuned on the CyberLLMInstruct
 - Gemma 2 9B
 - Llama 2 70B
 
-## Citation
-
-If you use this work in your research, please cite:
-
-```bibtex
-@misc{elzemity2025cyberllminstructnewdatasetanalysing,
-      title={CyberLLMInstruct: A New Dataset for Analysing Safety of Fine-Tuned LLMs Using Cyber Security Data}, 
-      author={Adel ElZemity and Budi Arief and Shujun Li},
-      year={2025},
-      eprint={2503.09334},
-      archivePrefix={arXiv},
-      primaryClass={cs.CR},
-      url={https://arxiv.org/abs/2503.09334}, 
-}
-```
 
 ## Getting Started
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/adelsamir01/CyberLLMInstruct.git
+git clone https://github.com/anonymised/CyberLLMInstruct.git
 cd CyberLLMInstruct
 ```
 
@@ -104,3 +84,4 @@ The pipeline will create the following directories as it runs:
 - `final_dataset/`: Final processed dataset
 
 These directories are not included in the repository and will be generated when you run the pipeline.
+# CyberLLMInstruct
