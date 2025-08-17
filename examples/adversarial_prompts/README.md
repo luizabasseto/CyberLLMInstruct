@@ -4,7 +4,7 @@ This directory contains example adversarial prompts extracted from the CyberLLMI
 
 ## Contents
 
-- `adversarial_prompts.csv`: A sample of adversarial prompts from the dataset
+- `adversarial_prompts.json`: A sample of adversarial prompts from the dataset
 - This file contains a subset of the full dataset for demonstration purposes
 - Due to copyright considerations, only a snippet of the dataset is provided
 
