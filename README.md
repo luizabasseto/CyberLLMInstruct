@@ -12,6 +12,7 @@ This repository contains all code and materials to reproduce the dataset used in
 * `examples/`: Examples of using the CyberLLMInstruct dataset
   - `deepeval/`: Example 1
   - `cybermetric/`: Example 2
+  - `adversarial_prompts/`: Example adversarial prompts from the dataset
 
 * `finetune/`: Comprehensive fine-tuning pipeline
   - `data_prep.py`: Data preprocessing for various LLM architectures
@@ -82,6 +83,3 @@ The pipeline will create the following directories as it runs:
 - `reviewed_data/`: Data after manual review
 - `security_aligned/`: Security-aligned instruction pairs
 - `final_dataset/`: Final processed dataset
-
-These directories are not included in the repository and will be generated when you run the pipeline.
-# CyberLLMInstruct
