@@ -1,5 +1,21 @@
 # CyberLLMInstruct
 
+## Citation
+
+If you use this dataset in your research, please cite our paper:
+
+```bibtex
+@inproceedings{CyberLLMInstruct,
+author = {ElZemity, Adel and Arief, Budi and Li, Shujun},
+title = {{CyberLLMInstruct}: A Pseudo-Malicious Dataset Revealing Safety-Performance Trade-offs in Cyber Security {LLM} Fine-tuning},
+booktitle = {Proceedings of the 2025 Workshop on Artificial Intelligence and Security},
+year = {2025},
+publisher = {ACM},
+address = {New York, NY, USA},
+note = {Preprint available at \url{https://doi.org/10.48550/arXiv.2503.09334}},
+}
+```
+
 This repository contains all code and materials to reproduce the dataset used in the paper. Due to copyright considerations, we provide scripts to regenerate the dataset rather than distributing it directly.
 
 ## Repository Structure
