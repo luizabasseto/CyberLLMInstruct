@@ -8,9 +8,10 @@ If you use this dataset in your research, please cite our paper:
 @inproceedings{CyberLLMInstruct,
 author = {ElZemity, Adel and Arief, Budi and Li, Shujun},
 title = {{CyberLLMInstruct}: A Pseudo-Malicious Dataset Revealing Safety-Performance Trade-offs in Cyber Security {LLM} Fine-tuning},
-booktitle = {Proceedings of the 2025 Workshop on Artificial Intelligence and Security},
+booktitle = {Proceedings of the 2025 Workshop on Artificial Intelligence and Security (AISec 2025)},
 year = {2025},
 publisher = {ACM},
+doi = {10.1145/3733799.3762968},
 address = {New York, NY, USA},
 note = {Preprint available at \url{https://doi.org/10.48550/arXiv.2503.09334}},
 }
