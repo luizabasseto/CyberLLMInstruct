@@ -4,6 +4,7 @@ import json
 import logging
 import requests
 import time
+import re
 from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 class CyberDomainClassifier:
     def __init__(self, input_dir: str = "structured_data", output_dir: str = "domain_classified", 
-                 ollama_model: str = "gemma3", ollama_port: int = 11434):
+                 ollama_model: str = "gemma:2b", ollama_port: int = 11434):
         """Initialize the domain classifier with directory configurations."""
         self.input_dir = Path(input_dir)
         self.output_dir = Path(output_dir)
@@ -73,44 +74,48 @@ Content:
 Instruction: {entry.get('instruction', '')}
 Response: {entry.get('response', '')}
 
-Return your classification as a JSON array of objects with 'domain' and 'confidence' fields, sorted by confidence in descending order.
+Return your classification as a JSON object or an array of objects with 'domain' and 'confidence' fields, sorted by confidence.
 Example format:
 [
     {{"domain": "web_security", "confidence": 0.95}},
     {{"domain": "vulnerability_management", "confidence": 0.75}}
 ]
 
-Only include domains with confidence > 0.2. Be specific and accurate in your classification."""
+Only include domains with confidence > 0.2."""
 
-        system_prompt = """You are a cybersecurity domain classification expert. Your task is to analyze cybersecurity content and classify it into specific domains. 
-        Be precise and technical in your analysis. Only classify into the provided domains. Return results in the exact JSON format specified."""
+        system_prompt = """You are a cybersecurity domain classification expert. Your task is to analyze content and classify it into the provided domains. 
+        Return results in the exact JSON format specified, without any extra text."""
 
         response = self.call_ollama(prompt, system_prompt)
         
-        if response:
-            try:
-                # Extract JSON from response
-                json_start = response.find('[')
-                json_end = response.rfind(']') + 1
-                if json_start >= 0 and json_end > json_start:
-                    classifications = json.loads(response[json_start:json_end])
-                    entry['domains'] = classifications
-                    if classifications:
-                        entry['primary_domain'] = classifications[0]['domain']
-                    else:
-                        entry['primary_domain'] = 'uncategorized'
-                else:
-                    logger.warning(f"Could not parse classification JSON from response: {response}")
-                    entry['domains'] = []
-                    entry['primary_domain'] = 'uncategorized'
-            except json.JSONDecodeError as e:
-                logger.error(f"Error parsing classification JSON: {str(e)}")
-                entry['domains'] = []
-                entry['primary_domain'] = 'uncategorized'
-        else:
+        if not response:
             entry['domains'] = []
             entry['primary_domain'] = 'uncategorized'
+            return entry
+
+        classifications = []
+        try:
+            match = re.search(r'(\[.*\]|\{.*\})', response, re.DOTALL)
+            if match:
+                json_string = match.group(0)
+                parsed_json = json.loads(json_string)
+                
+                if isinstance(parsed_json, dict):
+                    classifications = [parsed_json] # Transforma o objeto único em uma lista
+                else:
+                    classifications = parsed_json
+            else:
+                logger.warning(f"Could not find valid JSON in response: {response}")
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Error parsing classification JSON: {str(e)} from response: {response}")
         
+        entry['domains'] = classifications
+        if classifications and 'domain' in classifications[0]:
+            entry['primary_domain'] = classifications[0]['domain']
+        else:
+            entry['primary_domain'] = 'uncategorized'
+            
         return entry
 
     def process_directory(self):

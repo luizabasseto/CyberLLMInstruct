@@ -26,7 +26,7 @@ class CyberDataFilter:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.ollama_url = ollama_url
-        self.model = "gemma3:latest"
+        self.model = "gemma:2b"
         
         # Keywords and patterns for filtering
         self.cybersecurity_keywords = {

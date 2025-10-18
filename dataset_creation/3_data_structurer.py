@@ -20,7 +20,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class CyberDataStructurer:
-    def __init__(self, input_dir: str = "filtered_data", output_dir: str = "structured_data", ollama_model: str = "gemma3", ollama_port: int = 65008):
+    def __init__(self, input_dir: str = "filtered_data", output_dir: str = "structured_data", ollama_model: str = "gemma:2b", ollama_port: int = 65008):
         """Initialize the data structurer with directory configurations."""
         self.input_dir = Path(input_dir)
         self.output_dir = Path(output_dir)

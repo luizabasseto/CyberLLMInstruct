@@ -1,0 +1,14 @@
+{
+  "apis": {
+    "source1": {
+      "api_key": "COLOQUE_UMA_CHAVE_AQUI_OU_DEIXE_EM_BRANCO",
+      "base_url": "https://api.source1.com",
+      "rate_limit": 100
+    },
+    "source2": {
+      "api_key": "COLOQUE_OUTRA_CHAVE_AQUI_OU_DEIXE_EM_BRANCO",
+      "base_url": "https://api.source2.com",
+      "rate_limit": 50
+    }
+  }
+}

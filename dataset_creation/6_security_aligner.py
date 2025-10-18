@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 class SecurityAligner:
     def __init__(self, input_dir: str = "reviewed_data", output_dir: str = "security_aligned",
-                 ollama_model: str = 'gemma3', ollama_url: str = "http://localhost:11434"):
+                 ollama_model: str = 'gemma:2b', ollama_url: str = "http://localhost:11434"):
         """Initialize the security aligner with directory configurations."""
         self.input_dir = Path(input_dir)
         self.output_dir = Path(output_dir)
@@ -567,8 +567,8 @@ def main():
     parser = argparse.ArgumentParser(description='Add security-focused examples to dataset')
     parser.add_argument('--ratio', type=float, default=0.2,
                        help='Ratio of security examples to add (default: 0.2)')
-    parser.add_argument('--model', type=str, default='gemma3',
-                       help='Ollama model to use (default: gemma3)')
+    parser.add_argument('--model', type=str, default='gemma:2b',
+                       help='Ollama model to use (default: gemma:2b)')
     args = parser.parse_args()
     
     aligner = SecurityAligner(ollama_model=args.model)
