@@ -34,6 +34,9 @@ MODEL_CONFIGS = {
 @dataclass
 class DataArguments:
     """Arguments for data preprocessing."""
+    model_name: str = field( 
+        metadata={"help": "Model nickname (e.g., phi-3-mini)"}
+    )
     input_path: str = field(
         default="dataset/CyberLLM_full_dataset.csv",
         metadata={"help": "Path to the input dataset"}
@@ -100,19 +103,37 @@ class DataPreprocessor:
     def load_data(self) -> List[Dict]:
         """Load and validate the input dataset."""
         try:
-            # Read CSV in chunks to handle large files
-            chunk_size = 10000
-            all_data = []
-            
             logger.info(f"Loading dataset from {self.input_path}")
-            for chunk in pd.read_csv(self.input_path, chunksize=chunk_size):
-                # Ensure required columns exist
-                if 'instruction' not in chunk.columns or 'response' not in chunk.columns:
-                    raise ValueError("Dataset must contain 'instruction' and 'response' columns")
+            
+            if self.input_path.suffix == '.csv':
+                chunk_size = 10000
+                all_data = []
+                for chunk in pd.read_csv(self.input_path, chunksize=chunk_size):
+                    if 'instruction' not in chunk.columns or 'response' not in chunk.columns:
+                        raise ValueError("Dataset must contain 'instruction' and 'response' columns")
+                    chunk_data = chunk[['instruction', 'response']].to_dict('records')
+                    all_data.extend(chunk_data)
+            
+            elif self.input_path.suffix == '.json':
+                with open(self.input_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
                 
-                # Convert chunk to list of dictionaries
-                chunk_data = chunk[['instruction', 'response']].to_dict('records')
-                all_data.extend(chunk_data)
+                if isinstance(data, dict) and 'data' in data:
+                    all_data = data['data']
+                elif isinstance(data, list):
+                    all_data = data
+                else:
+                    raise ValueError("Unknown JSON structure. Expected a list of entries or a dict with a 'data' key.")
+                
+                if not all_data:
+                    logger.warning("JSON file is empty or contains no data.")
+                    return []
+                
+                if isinstance(all_data[0], dict) and ('instruction' not in all_data[0] or 'response' not in all_data[0]):
+                    raise ValueError("JSON dataset must be a list of dicts with 'instruction' and 'response' keys")
+
+            else:
+                raise ValueError(f"Unsupported file format: {self.input_path.suffix}")
             
             logger.info(f"Loaded {len(all_data)} examples")
             return all_data
@@ -203,12 +224,28 @@ class DataPreprocessor:
         output_path = self.output_dir / self.model_name
         output_path.mkdir(parents=True, exist_ok=True)
         
-        dataset_dict = DatasetDict({
-            'train': train_dataset,
-            'validation': val_dataset,
-            'test': test_dataset
-        })
+        dataset_dict = DatasetDict()
         
+        if len(train_dataset) > 0:
+            dataset_dict['train'] = train_dataset
+            logger.info(f"Train dataset size: {len(train_dataset)}")
+            
+        if len(val_dataset) > 0:
+            dataset_dict['validation'] = val_dataset
+            logger.info(f"Validation dataset size: {len(val_dataset)}")
+        else:
+            logger.warning("Validation dataset is empty. Skipping.")
+            
+        if len(test_dataset) > 0:
+            dataset_dict['test'] = test_dataset
+            logger.info(f"Test dataset size: {len(test_dataset)}")
+        else:
+            logger.warning("Test dataset is empty. Skipping.")
+
+        if not dataset_dict:
+            logger.warning("No data to save after splitting.")
+            return
+
         dataset_dict.save_to_disk(output_path)
         logger.info(f"Saved processed datasets to {output_path}")
 
@@ -232,13 +269,13 @@ class DataPreprocessor:
 
 def main():
     """Main entry point for data preprocessing."""
-    parser = HfArgumentParser((ModelArguments, DataArguments))
-    model_args, data_args = parser.parse_args_into_dataclasses()
+    parser = HfArgumentParser((DataArguments,)) 
+    (data_args,) = parser.parse_args_into_dataclasses()
     
     preprocessor = DataPreprocessor(
         input_path=data_args.input_path,
         output_dir=data_args.output_dir,
-        model_name=model_args.model_name,
+        model_name=data_args.model_name, 
         train_ratio=data_args.train_ratio,
         val_ratio=data_args.val_ratio,
         test_ratio=data_args.test_ratio,
