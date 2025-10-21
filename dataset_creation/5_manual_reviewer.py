@@ -313,7 +313,7 @@ class CyberDataReviewer:
                     'accuracy': 'Very Accurate',
                     'completeness': 'Complete'
                 },
-                'needs_modification': False, 
+                'needs_modification': False,
                 'modifications': None,
                 'review_timestamp': datetime.now().isoformat()
             }
