@@ -4,10 +4,10 @@ import json
 import logging
 import requests
 import time
-import re
 from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime
+import re
 
 # Configure logging
 logging.basicConfig(
@@ -101,11 +101,11 @@ Only include domains with confidence > 0.2."""
                 parsed_json = json.loads(json_string)
                 
                 if isinstance(parsed_json, dict):
-                    classifications = [parsed_json] # Transforma o objeto único em uma lista
+                    classifications = [parsed_json] 
                 else:
                     classifications = parsed_json
             else:
-                logger.warning(f"Could not find valid JSON in response: {response}")
+                 logger.warning(f"Could not find valid JSON in response: {response}")
 
         except json.JSONDecodeError as e:
             logger.error(f"Error parsing classification JSON: {str(e)} from response: {response}")
