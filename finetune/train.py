@@ -81,6 +81,10 @@ class DataArguments:
 @dataclass
 class TrainingArguments(TrainingArguments):
     """Custom training arguments."""
+    evaluation_strategy: str = field(
+        default="no",
+        metadata={"help": "Set to 'no' because we have no validation set"}
+    )
     model_max_length: int = field(
         default=2048,
         metadata={"help": "Maximum sequence length"}
@@ -246,7 +250,7 @@ def train():
         model=model,
         args=training_args,
         train_dataset=dataset["train"],
-        eval_dataset=dataset["validation"],
+        eval_dataset=dataset.get("validation"),
         data_collator=data_collator,
         tokenizer=tokenizer,
     )
