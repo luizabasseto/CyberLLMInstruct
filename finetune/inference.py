@@ -179,13 +179,14 @@ class ModelInference:
                     target=self.model.generate,
                     kwargs={
                         **inputs,
-                        **generation_config
+                        **generation_config,
+                        "use_cache": False,
                     }
                 )
                 thread.start()
                 return streamer
             else:
-                outputs = self.model.generate(**inputs, **generation_config)
+                outputs = self.model.generate(**inputs, **generation_config, use_cache=False)
                 response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
                 
                 # Remove the prompt from the response
